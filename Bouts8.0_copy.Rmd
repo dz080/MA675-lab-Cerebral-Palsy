@@ -1,0 +1,413 @@
+---
+title: "Movement bouts_22.8.25"
+author: "Xiwen Su"
+date: "8/25/2022"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(TTR)
+library(readr)
+library(ggpmisc)
+library(ggforce)
+```
+
+```{r}
+SM01_RA_accel <- read_csv("/Users/dz/Documents/MSSP/MA675/Cerebral Palsy/22.6.8_2/UR/accel.csv")
+SM01_RA_accel <- read_csv("/Users/dz/Documents/MSSP/MA675/Cerebral Palsy/22.6.8_2/UL/accel.csv")
+SM01_RA_accel <- read_csv("/Users/dz/Documents/MSSP/MA675/Cerebral Palsy/22.6.8_2/LR/accel.csv")
+SM01_RA_accel <- read_csv("/Users/dz/Documents/MSSP/MA675/Cerebral Palsy/22.6.8_2/LL/accel.csv")
+
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.7.1/UR/accel.csv")
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.7.1/UL/accel.csv")
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.7.1/LR/accel.csv")
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.7.1/LL/accel.csv")
+# 
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.8.8/UR/accel.csv")
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.8.8/UL/accel.csv")
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.8.8/LR/accel.csv")
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.8.8/LL/accel.csv")
+# 
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.9.1/UR/accel.csv")
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.9.1/UL/accel.csv")
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.9.1/LR/accel.csv")
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.9.1/LL/accel.csv")
+# 
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.9.9/UR/accel.csv")
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.9.9/UL/accel.csv")
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.9.9/LR/accel.csv")
+# SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/data collection/22.9.9/LL/accel.csv")
+
+
+r_accel <- SM01_RA_accel
+time<-r_accel$`Timestamp (microseconds)` / 1000000
+x<-r_accel$`Accel X (g)`
+y<-r_accel$`Accel Y (g)`
+z<-r_accel$`Accel Z (g)`
+
+r_accel <- r_accel %>% mutate(times = time - min(time)) %>% 
+  mutate(x2 = x * 9.80665) %>% mutate(y2 = y * 9.80665) %>% 
+  mutate(z2 = z * 9.80665) %>% 
+  mutate(mag = sqrt((x2 * x2) + (y2 * y2) + (z2 * z2))) %>%
+  mutate(id_a=row_number())
+
+dim(r_accel)
+r_strt <- r_accel %>% filter(times > 72 & times < 73)
+ggplot(r_strt, aes(x=times, y=mag)) + geom_line()
+```
+
+##AUTOMATE 
+```{r}
+maxrow = r_strt[which.max(r_strt$mag),]$id_a
+r_accel<- r_accel[-(1:maxrow),]
+
+r_accel <- r_accel %>% mutate(times = times - min(times)) 
+dim(r_accel)
+
+r_accel<- r_accel %>% filter(times>251 & times < 459) %>% mutate(mag_d = mag-median(mag))
+dim(r_accel)
+
+r_accel <- r_accel %>% mutate(times = times - min(times)) %>%
+  filter(mag_d>1.32 | mag_d< -1.02) 
+dim(r_accel)
+
+r_accel$SMA31 <- TTR::SMA(r_accel$mag_d,n=31)
+```
+
+#maxima
+##double check this 
+```{r}
+attach(r_accel)
+library(photobiology) #attaching necessary package
+max.time <- times[find_peaks(SMA31)]
+max.mag <- mag_d[find_peaks(SMA31)] #colons unnecessary 
+df_max <- data.frame(max.mag)
+maxima <- df_max%>%filter(max.mag>=1) %>%
+  summarise(maxima=mean(max.mag)-1/2*sd(max.mag)) %>%
+  pull()
+```
+
+#minima
+#double check this
+```{r}
+min.time <- times[find_peaks(-SMA31)]
+min.mag <- mag_d[find_peaks(-SMA31)]
+df_min <- data.frame(min.mag)
+minima <- df_min%>%filter(min.mag<=-1)%>%
+  summarise(minima=mean(min.mag)+1/2*sd(min.mag)) %>%
+  pull()
+```
+
+```{r}
+r_accel <- r_accel %>% filter(mag_d>maxima | mag_d<minima)
+dim(r_accel)
+r_sample <- r_accel %>% filter(times > 120 & times <140 )
+View(r_sample)
+#check times&id_a match 
+```
+#plot
+```{r}
+ggplot(r_accel, aes(x=times, y=mag_d)) + geom_line() +
+  geom_hline(yintercept=-1.02, linetype="dashed", color = "red")+
+  geom_hline(yintercept=1.32, linetype="dashed", color = "red")
+
+ggplot(data = r_accel, aes(x = times, y = mag_d)) + 
+  geom_line() + stat_peaks(col = "red") + 
+  stat_valleys(col = "green")
+
+ggplot(data = r_sample, aes(x = times, y = mag_d)) + 
+  geom_line() + stat_peaks(col = "red") + 
+  stat_valleys(col = "green")
+
+ggplot(r_accel, aes(x=times)) + geom_line(aes(y=mag_d)) +
+  geom_line(aes(y=SMA31),color="blue")+
+  theme_minimal()+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=-1.02, linetype="dashed", color = "grey")+
+  geom_hline(yintercept=1.32, linetype="dashed", color = "grey")+
+  geom_hline(yintercept=maxima, linetype="dashed", color = "red")+
+  geom_hline(yintercept=minima, linetype="dashed", color = "red")+
+  labs(title="Moving averages")
+
+ggplot(r_sample, aes(x=times)) + geom_line(aes(y=mag_d)) +
+  geom_line(aes(y=SMA31),color="blue")+
+  theme_minimal()+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=-1.02, linetype="dashed", color = "grey")+
+  geom_hline(yintercept=1.32, linetype="dashed", color = "grey")+
+  geom_hline(yintercept=maxima, linetype="dashed", color = "red")+
+  geom_hline(yintercept=minima, linetype="dashed", color = "red")+
+  labs(title="Moving averages")
+
+View(r_accel)
+```
+
+#gyroscope
+```{r}
+SM01_RA_gyro <- read_csv("/Users/dz/Documents/MSSP/MA675/Cerebral Palsy/22.6.8_2/UR/gyro.csv")
+SM01_RA_gyro <- read_csv("/Users/dz/Documents/MSSP/MA675/Cerebral Palsy/22.6.8_2/UL/gyro.csv")
+SM01_RA_gyro <- read_csv("/Users/dz/Documents/MSSP/MA675/Cerebral Palsy/22.6.8_2/LR/gyro.csv")
+SM01_RA_gyro <- read_csv("/Users/dz/Documents/MSSP/MA675/Cerebral Palsy/22.6.8_2/LL/gyro.csv")
+
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.7.1/UR/gyro.csv")
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.7.1/UL/gyro.csv")
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.7.1/LR/gyro.csv")
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.7.1/LL/gyro.csv")
+# 
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.8.8/UR/gyro.csv")
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.8.8/UL/gyro.csv")
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.8.8/LR/gyro.csv")
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.8.8/LL/gyro.csv")
+# 
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.9.1/UR/gyro.csv")
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.9.1/UL/gyro.csv")
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.9.1/LR/gyro.csv")
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.9.1/LL/gyro.csv")
+# 
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.9.9/UR/gyro.csv")
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.9.9/UL/gyro.csv")
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.9.9/LR/gyro.csv")
+# SM01_RA_gyro <- read_csv("~/Documents/Lab/IMU/data collection/22.9.9/LL/gyro.csv")
+
+
+r_gyro <- SM01_RA_gyro
+time<-r_gyro$`Timestamp (microseconds)` / 1000000
+x<-r_gyro$`Gyro X (°/s)`
+y<-r_gyro$`Gyro Y (°/s)`
+z<-r_gyro$`Gyro Z (°/s)`
+
+r_gyro <- r_gyro %>% mutate(times = time - min(time)) %>% 
+  mutate(x3 = x * 0.0174533) %>% mutate(y3 = y * 0.0174533) %>% 
+  mutate(z3 = z * 0.0174533) %>% 
+  mutate(w_mag = sqrt((x3 * x3) + (y3 * y3) + (z3 * z3))) %>%
+  mutate(id_g=row_number())
+
+r_strt <- r_gyro %>% filter(times > 72 & times <73 )
+ggplot(r_strt, aes(x=times, y=w_mag)) + geom_line()
+```
+
+
+##AUTOMATE THIS
+```{r}
+which.max(r_strt$w_mag)
+r_strt[6,]
+r_gyro<-r_gyro[-(1:4512),]
+r_gyro <- r_gyro %>% mutate(times = times - min(times)) 
+
+r_gyro<- r_gyro %>% filter(times>251 & times <459) %>% mutate(w_mag_d = w_mag-median(w_mag))
+
+r_gyro <- r_gyro %>% mutate(times = times - min(times)) %>%
+  filter(w_mag_d>0.32) 
+r_gyro$w_SMA31 <- TTR::SMA(r_gyro$w_mag_d,n=31)
+```
+
+#maxima
+```{r}
+attach(r_gyro)
+max.w_mag <- w_mag_d[find_peaks(w_SMA31)]
+df_w_max <- data.frame(max.w_mag)
+df_w_max <- df_w_max%>%filter(max.w_mag >= 0.32) %>%
+  summarise(w_maxima = mean(max.w_mag)-1/2*sd(max.w_mag)) %>%
+  pull()
+```
+
+```{r}
+r_gyro <- r_gyro %>% filter(w_mag_d>w_maxima)
+dim(r_gyro)
+w_r_sample <- r_gyro %>% filter(times > 120 & times <140 )
+View(w_r_sample)
+```
+#plot
+#DOUBLE CHECK
+```{r}
+ggplot(r_gyro, aes(x=times, y=w_mag_d)) + geom_line() +
+  geom_hline(yintercept=0.32, linetype="dashed", color = "red")
+
+ggplot(data = r_gyro, aes(x = times, y = w_mag_d)) + 
+  geom_line() + stat_peaks(col = "red") 
+
+ggplot(data = w_r_sample, aes(x = times, y = w_mag_d)) + 
+  geom_line() + stat_peaks(col = "red") +
+  geom_hline(yintercept=w_maxima, linetype="dashed", color = "red")
+
+ggplot(r_gyro, aes(x=times)) + geom_line(aes(y=w_mag_d)) +
+  geom_line(aes(y=w_SMA31),color="blue")+
+  theme_minimal()+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.32, linetype="dashed", color = "grey")+
+  geom_hline(yintercept=w_maxima, linetype="dashed", color = "red")+
+  labs(title="Moving averages")
+
+ggplot(w_r_sample, aes(x=times)) + geom_line(aes(y=w_mag_d)) +
+  geom_line(aes(y=w_SMA31),color="blue")+
+  theme_minimal()+
+  theme(legend.position = "top")+
+  geom_hline(yintercept=0.32, linetype="dashed", color = "red")+
+  geom_hline(yintercept=w_maxima, linetype="dashed", color = "red")+
+  labs(title="Moving averages")
+```
+
+```{r}
+dim(r_accel)
+View(r_accel)
+dim(r_gyro)
+View(r_gyro)
+```
+#Bouts_merge sample window:20s
+```{r}
+bouts<- merge(r_accel, r_gyro, by="times", all=F)
+dim(bouts)
+hist(bouts$times,breaks = 20,xlab="Time(s)",main = "Movement Bouts")  
+axis(side=1, at=seq(0,210, 10), labels=seq(0,210,10))
+```
+#plot_merged
+```{r}
+ggplot(bouts) + geom_point(aes(x=times, y=mag_d),color="black",pch=17)+
+  geom_point(aes(x=times, y=w_mag_d),color="red") +
+  geom_hline(yintercept=maxima, linetype="dashed", color = "grey")+
+  geom_hline(yintercept=minima, linetype="dashed", color = "grey")+
+  geom_hline(yintercept=w_maxima, linetype="dashed", color = "maroon")+
+  labs(title="Movement Bouts")
+```
+#plot_20s
+```{r}
+View(bouts)
+bouts120_140<- bouts[(166:220),]
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(TTR)
+library(readr)
+library(ggpmisc)
+library(ggforce)
+library(RColorBrewer)
+```
+
+```{r}
+SM01_RA_accel <- read_csv("~/Documents/Lab/IMU/22.6.8/SM01_04/SM01-RA-accel.csv")
+
+r_accel <- SM01_RA_accel
+time<-r_accel$`Timestamp (microseconds)` / 1000000
+x<-r_accel$`Accel X (g)`
+y<-r_accel$`Accel Y (g)`
+z<-r_accel$`Accel Z (g)`
+
+r_accel <- r_accel %>% mutate(times = time - min(time)) %>% 
+  mutate(x2 = x * 9.80665) %>% mutate(y2 = y * 9.80665) %>% 
+  mutate(z2 = z * 9.80665) %>% 
+  mutate(mag = sqrt((x2 * x2) + (y2 * y2) + (z2 * z2))) %>%
+  mutate(id_a=row_number())
+
+r_accel<- r_accel[-(1:4506),]
+r_accel <- r_accel %>% mutate(times = times - min(times)) 
+
+r_accel<- r_accel %>% filter(times>251 & times <459) %>% mutate(mag_d = mag-median(mag))
+
+r_accel <- r_accel %>% mutate(times = times - min(times)) 
+
+r_sample_2 <- r_accel %>% filter(times > 120 & times <140 )
+```
+
+```{r}
+SM01_RA_gyro_2 <- read_csv("~/Documents/Lab/IMU/22.6.8/SM01_04/SM01-RA-gyro.csv")
+r_gyro_2 <- SM01_RA_gyro_2
+time<-r_gyro_2$`Timestamp (microseconds)` / 1000000
+x<-r_gyro_2$`Gyro X (°/s)`
+y<-r_gyro_2$`Gyro Y (°/s)`
+z<-r_gyro_2$`Gyro Z (°/s)`
+
+r_gyro_2 <- r_gyro_2 %>% mutate(times = time - min(time)) %>% 
+  mutate(x3 = x * 0.0174533) %>% mutate(y3 = y * 0.0174533) %>% 
+  mutate(z3 = z * 0.0174533) %>% 
+  mutate(w_mag = sqrt((x3 * x3) + (y3 * y3) + (z3 * z3)))%>%
+  mutate(id_g=row_number())
+
+r_gyro_2<-r_gyro_2[-(1:4512),]
+r_gyro_2 <- r_gyro_2 %>% mutate(times = times - min(times)) 
+
+r_gyro_2<- r_gyro_2 %>% filter(times>251 & times <459) %>% mutate(w_mag_d = w_mag-median(w_mag))
+
+w_r_sample_2 <- r_gyro_2 %>% mutate(times = times - min(times))%>% filter(id_g > 27731 & id_g <28983 )
+```
+
+```{r}
+bouts120_140<- bouts[(166:220),]
+colors <- c("Acceleration" = "#012649", "Gyroscope" = "darkorange")
+
+ggplot()+
+  theme_classic()+
+  geom_line(data = r_sample_2, aes(x=times,y=mag_d,color="Acceleration"),lwd=0.75)+
+  geom_line(data=w_r_sample_2,aes(x=times, y=w_mag_d,color="Gyroscope"),lwd=0.75)+
+  geom_hline(yintercept=maxima, linetype="dashed", color = "#012649" )+
+  geom_hline(yintercept=minima, linetype="dashed", color = "#012649" )+
+  geom_hline(yintercept=w_maxima, linetype="dashed", color = "darkorange")+
+  scale_color_manual(name='',
+                     breaks=c('Acceleration', 'Gyroscope'),
+                     values=c('Acceleration'='#012649', 'Gyroscope'='darkorange'))+
+  theme(legend.title=element_text(size=15),
+       legend.text=element_text(size=14)) +
+  geom_point(data=bouts120_140,aes(x=times, y=mag_d,color="gold"),pch=20)+
+  geom_point(data=bouts120_140,aes(x=times, y=w_mag_d,color="mediumpurple"),pch=18) +
+  labs(x="Time (s)",y = expression ("Magnitude in"~m/s^2),color="Legend",title="Example in 20s window") +
+  theme(
+    axis.text = element_text(size = 20),
+    axis.title = element_text(size = 20),
+    legend.text = element_text(size = 20),
+    legend.title = element_text(size = 20),
+    legend.position = c(.95, .95),
+    legend.justification = c("right", "top"),
+    legend.box.just = "right",
+    legend.margin = margin(6, 6, 6, 6)
+    )
+
+ggsave(filename="IMU2.eps",path = "/Users/xiwensu/Documents/Lab/IMU/22.8.25", width = 14.6, height = 9, device='tiff', dpi=300)
+```
+```{r}
+dim(bouts)
+View(bouts)
+```
+
+#difference
+```{r}
+difference<-data.frame(diff(bouts$times))
+blank <- c("NA")
+difference<-rbind(blank,difference)
+bouts<-cbind(difference,bouts)
+colnames(bouts)[1]<-"difference_time"
+
+dim(bouts)
+View(bouts)
+```
+
+```{r}
+Time <-c()
+
+for (i in 1:length(bouts$difference_time)){
+  if(bouts$difference_time[i] >= 0.5){
+    Time<-append(Time, '>0.5')
+  }
+  else{
+    Time<-append(Time,'<0.5')
+  }
+  
+}
+Time
+```
+
+```{r}
+dev.size("in")
+getwd()
+write.csv(x=bouts,file="Bouts_6.30.csv")
+rm(list = ls())
+```
+
